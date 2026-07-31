@@ -23,15 +23,11 @@ from sklearn.metrics import (
     recall_score,
     roc_auc_score,
 )
-from sklearn.model_selection import (
-    GridSearchCV,
-    StratifiedKFold,
-)
+from sklearn.model_selection import GridSearchCV, StratifiedKFold
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import OneHotEncoder
 from xgboost import XGBClassifier
 
-# Configuration
 PROJECT_DIR = Path(__file__).resolve().parents[1]
 
 PREPARED_DATA_DIR = Path(
@@ -46,39 +42,21 @@ TEST_PATH = PREPARED_DATA_DIR / "test.csv"
 
 MODEL_DIR = PROJECT_DIR / "models"
 
-MODEL_PATH = (
-    MODEL_DIR
-    / "best_model.joblib"
-)
-
-METRICS_PATH = (
-    MODEL_DIR
-    / "evaluation_metrics.json"
-)
-
-TUNING_RESULTS_PATH = (
-    MODEL_DIR
-    / "tuning_results.csv"
-)
-
+MODEL_PATH = MODEL_DIR / "best_model.joblib"
+METRICS_PATH = MODEL_DIR / "evaluation_metrics.json"
+TUNING_RESULTS_PATH = MODEL_DIR / "tuning_results.csv"
 CLASSIFICATION_REPORT_PATH = (
-    MODEL_DIR
-    / "classification_report.png"
+    MODEL_DIR / "classification_report.png"
 )
-
 CONFUSION_MATRIX_PATH = (
-    MODEL_DIR
-    / "confusion_matrix.png"
+    MODEL_DIR / "confusion_matrix.png"
 )
 
 TARGET_COLUMN = "ProdTaken"
 RANDOM_STATE = 42
 EXPERIMENT_NAME = "tourism-production-experimentation"
 
-# Configure MLflow
-
-# GitHub Actions can supply a remote tracking URI.
-# Otherwise, runs are stored locally for the workflow.
+# Configure production experiment tracking
 DEFAULT_TRACKING_DIR = (
     PROJECT_DIR
     / "production_tracking"
@@ -101,42 +79,34 @@ experiment = mlflow.set_experiment(
     EXPERIMENT_NAME
 )
 
-MLFLOW_UI_URL = os.getenv(
-    "MLFLOW_UI_URL",
-    TRACKING_URI,
-).rstrip("/")
-
 if mlflow.active_run() is not None:
     mlflow.end_run()
 
-# Validate workflow artifacts
+# Validate the prepared datasets
 missing_files = [
     str(path)
     for path in (TRAIN_PATH, TEST_PATH)
-    if not path.exists()
+    if not path.is_file()
 ]
 
 if missing_files:
     raise FileNotFoundError(
-        "Required prepared-data artifacts were not found: "
+        "Required prepared-data files were not found: "
         + ", ".join(missing_files)
     )
 
-# Load prepared data
 train_data = pd.read_csv(TRAIN_PATH)
 test_data = pd.read_csv(TEST_PATH)
 
-if TARGET_COLUMN not in train_data.columns:
-    raise KeyError(
-        f"Target column '{TARGET_COLUMN}' is missing "
-        "from the training dataset."
-    )
-
-if TARGET_COLUMN not in test_data.columns:
-    raise KeyError(
-        f"Target column '{TARGET_COLUMN}' is missing "
-        "from the testing dataset."
-    )
+for dataset_name, dataset in {
+    "training": train_data,
+    "testing": test_data,
+}.items():
+    if TARGET_COLUMN not in dataset.columns:
+        raise KeyError(
+            f"Target column '{TARGET_COLUMN}' is missing "
+            f"from the {dataset_name} dataset."
+        )
 
 X_train = train_data.drop(columns=[TARGET_COLUMN])
 y_train = train_data[TARGET_COLUMN]
@@ -177,14 +147,13 @@ preprocessor = ColumnTransformer(
 negative_count = int((y_train == 0).sum())
 positive_count = int((y_train == 1).sum())
 
-if positive_count == 0:
+if positive_count == 0 or negative_count == 0:
     raise ValueError(
-        "Training data does not contain any positive examples."
+        "Training data must contain both target classes."
     )
 
 scale_pos_weight = negative_count / positive_count
 
-# Define model pipeline
 model = XGBClassifier(
     objective="binary:logistic",
     eval_metric="logloss",
@@ -201,7 +170,7 @@ model_pipeline = Pipeline(
     ]
 )
 
-# Define hyperparameter search
+# Define the production hyperparameter search
 parameter_grid = {
     "model__n_estimators": [100, 200],
     "model__max_depth": [3, 5],
@@ -230,16 +199,18 @@ MODEL_DIR.mkdir(
     exist_ok=True,
 )
 
-# Tune, track, evaluate and save
+# Tune, evaluate and track the production model
 with mlflow.start_run(
     run_name="production-xgboost-grid-search"
 ) as parent_run:
+
+    parent_run_id = parent_run.info.run_id
 
     mlflow.log_params(
         {
             "algorithm": "XGBoost",
             "selection_metric": "f1",
-            "cv_folds": 5,
+            "cv_folds": cross_validation.n_splits,
             "training_rows": len(X_train),
             "testing_rows": len(X_test),
             "categorical_features": len(
@@ -257,7 +228,6 @@ with mlflow.start_run(
         "tuning/parameter_grid.json",
     )
 
-    # Run grid search
     grid_search.fit(X_train, y_train)
 
     tuning_results = pd.DataFrame(
@@ -274,7 +244,7 @@ with mlflow.start_run(
         artifact_path="tuning",
     )
 
-    # Log each parameter combination as a child run
+    # Log each tuning trial separately
     for trial_number, row in tuning_results.iterrows():
 
         with mlflow.start_run(
@@ -298,14 +268,10 @@ with mlflow.start_run(
                 }
             )
 
-    # Select and evaluate best model
     best_model = grid_search.best_estimator_
 
     predictions = best_model.predict(X_test)
-
-    probabilities = best_model.predict_proba(
-        X_test
-    )[:, 1]
+    probabilities = best_model.predict_proba(X_test)[:, 1]
 
     metrics = {
         "test_accuracy": float(
@@ -342,15 +308,13 @@ with mlflow.start_run(
 
     best_parameters = {
         name.replace("model__", ""): value
-        for name, value
-        in grid_search.best_params_.items()
+        for name, value in grid_search.best_params_.items()
     }
 
     mlflow.log_params(
         {
             f"best_{name}": value
-            for name, value
-            in best_parameters.items()
+            for name, value in best_parameters.items()
         }
     )
 
@@ -361,7 +325,7 @@ with mlflow.start_run(
 
     mlflow.log_metrics(metrics)
 
-    # Classification report
+    # Create the classification report
     report = classification_report(
         y_test,
         predictions,
@@ -377,7 +341,14 @@ with mlflow.start_run(
     report_df = (
         pd.DataFrame(report)
         .transpose()
-        .drop(columns=["support"])
+        .drop(index="accuracy")
+        .drop(columns="support")
+        .rename(
+            index={
+                "0": "Not Purchased",
+                "1": "Purchased",
+            }
+        )
     )
 
     classification_figure, classification_axis = (
@@ -417,7 +388,7 @@ with mlflow.start_run(
 
     plt.close(classification_figure)
 
-    # Confusion matrix
+    # Create the confusion matrix
     matrix = confusion_matrix(
         y_test,
         predictions,
@@ -469,7 +440,7 @@ with mlflow.start_run(
 
     plt.close(confusion_figure)
 
-    # Save model and evaluation summary
+    # Save the production model and metrics
     joblib.dump(
         best_model,
         MODEL_PATH,
@@ -504,7 +475,8 @@ with mlflow.start_run(
         artifact_path="evaluation",
     )
 
-# Display execution results
+print("\nProduction experiment completed.")
+
 print("\nBest parameters:")
 print(best_parameters)
 
@@ -522,6 +494,10 @@ print(
         y_test,
         predictions,
         zero_division=0,
+        target_names=[
+            "Not Purchased",
+            "Purchased",
+        ],
     )
 )
 
@@ -530,11 +506,5 @@ print(matrix)
 
 print("\nBest model saved at:", MODEL_PATH)
 print("Metrics saved at:", METRICS_PATH)
-
-parent_run_url = (
-    f"{MLFLOW_UI_URL}/#/experiments/"
-    f"{experiment.experiment_id}/runs/"
-    f"{parent_run.info.run_id}"
-)
-
-print("MLflow parent run:", parent_run_url)
+print("MLflow tracking URI:", mlflow.get_tracking_uri())
+print("MLflow parent run ID:", parent_run_id)

@@ -1,10 +1,11 @@
 
+# Create the Streamlit application
+
 from pathlib import Path
 
 import joblib
 import pandas as pd
 import streamlit as st
-
 
 st.set_page_config(
     page_title="Tourism Package Prediction",
@@ -59,7 +60,6 @@ FEATURE_DTYPES = {
     "MonthlyIncome": "float64",
 }
 
-
 @st.cache_resource
 def load_prediction_model():
     """Load the trained model once and reuse it across app reruns."""
@@ -71,7 +71,6 @@ def load_prediction_model():
 
     return joblib.load(MODEL_PATH)
 
-
 try:
     model = load_prediction_model()
 except Exception as error:
@@ -79,7 +78,6 @@ except Exception as error:
         f"Unable to load the prediction model: {error}"
     )
     st.stop()
-
 
 st.title("Tourism Package Purchase Prediction")
 
@@ -92,7 +90,6 @@ st.caption(
     "This prediction can support sales prioritization. "
     "It should not be used as an automated customer eligibility decision."
 )
-
 
 with st.form("tourism_prediction_form"):
 
@@ -251,7 +248,6 @@ with st.form("tourism_prediction_form"):
         type="primary",
         use_container_width=True,
     )
-
 
 if submitted:
 

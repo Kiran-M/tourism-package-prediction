@@ -3,9 +3,14 @@ __pycache__/
 .ipynb_checkpoints/
 
 development_tracking/
+development_models/
+production_tracking/
+prepared_data/
 mlruns/
-mlflow.db
+
 *.db
+*.log
 
 .env
+.venv/
 .streamlit/secrets.toml

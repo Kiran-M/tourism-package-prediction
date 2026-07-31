@@ -3,12 +3,12 @@
         "learning_rate": 0.1,
         "max_depth": 5,
         "n_estimators": 200,
-        "subsample": 0.8
+        "subsample": 1.0
     },
-    "best_cv_f1": 0.7431263739061925,
-    "test_accuracy": 0.9066002490660025,
-    "test_precision": 0.7597402597402597,
-    "test_recall": 0.7548387096774194,
-    "test_f1": 0.7572815533980582,
-    "test_roc_auc": 0.9310035842293908
+    "best_cv_f1": 0.7742018311182339,
+    "test_accuracy": 0.9176755447941889,
+    "test_precision": 0.7791411042944786,
+    "test_recall": 0.7987421383647799,
+    "test_f1": 0.7888198757763976,
+    "test_roc_auc": 0.9453952269148445
 }
