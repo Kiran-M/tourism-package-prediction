@@ -1,0 +1,152 @@
+name: Tourism MLOps Pipeline
+
+on:
+  push:
+    branches:
+      - main
+    paths-ignore:
+      - "models/**"
+      - "prepared_data/**"
+
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  register-dataset:
+    name: Register Dataset
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Register and validate dataset
+        run: python model_building/data_register.py
+
+
+  prepare-data:
+    name: Prepare Data
+    runs-on: ubuntu-latest
+    needs: register-dataset
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Prepare train and test datasets
+        run: python model_building/data_preparation.py
+
+      - name: Validate prepared datasets
+        run: |
+          test -f prepared_data/train.csv
+          test -f prepared_data/test.csv
+
+      - name: Upload prepared datasets
+        uses: actions/upload-artifact@v4
+        with:
+          name: prepared-data
+          path: |
+            prepared_data/train.csv
+            prepared_data/test.csv
+          retention-days: 7
+
+
+  train-model:
+    name: Train and Evaluate Model
+    runs-on: ubuntu-latest
+    needs: prepare-data
+
+    env:
+      MLFLOW_TRACKING_URI: sqlite:///mlflow.db
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Download prepared datasets
+        uses: actions/download-artifact@v4
+        with:
+          name: prepared-data
+          path: prepared_data
+
+      - name: Train and evaluate model
+        run: python model_building/model_training.py
+
+      - name: Validate trained model
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import joblib
+
+          model_path = Path("models/best_model.joblib")
+
+          if not model_path.exists():
+              raise FileNotFoundError(
+                  f"Expected model was not generated: {model_path}"
+              )
+
+          model = joblib.load(model_path)
+
+          if not hasattr(model, "predict"):
+              raise TypeError(
+                  "The generated artifact is not a valid prediction model."
+              )
+
+          print(f"Validated model: {model_path}")
+          print(f"Model type: {type(model).__name__}")
+          PY
+
+      - name: Upload model and evaluation artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: trained-model-and-evaluation
+          path: models/
+          retention-days: 30
+
+      - name: Commit generated ML artifacts to main
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          git add -f models/
+          git add -f prepared_data/train.csv
+          git add -f prepared_data/test.csv
+
+          if git diff --cached --quiet; then
+            echo "No generated artifact changes to commit."
+          else
+            git commit -m "Update trained model and evaluation artifacts [skip ci]"
+            git pull --rebase origin main
+            git push origin HEAD:main
+          fi

@@ -1,0 +1,11 @@
+__pycache__/
+*.py[cod]
+.ipynb_checkpoints/
+
+development_tracking/
+mlruns/
+mlflow.db
+*.db
+
+.env
+.streamlit/secrets.toml
