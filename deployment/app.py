@@ -81,6 +81,8 @@ except Exception as error:
 
 st.title("Tourism Package Purchase Prediction")
 
+st.subheader("Turning Traveller Profiles into Purchase Possibilities.") # v2 - commit!
+
 st.write(
     "Enter the customer and sales-pitch details to estimate "
     "whether the customer is likely to purchase the tourism package."
