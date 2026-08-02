@@ -13,6 +13,7 @@ TARGET_COLUMN = "ProdTaken"
 TEST_SIZE = 0.20
 RANDOM_STATE = 42
 
+# Corrections to category names
 CATEGORY_CORRECTIONS = {
     "Gender": {
         "Fe Male": "Female",

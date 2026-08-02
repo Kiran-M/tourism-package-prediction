@@ -7,6 +7,7 @@ import joblib
 import pandas as pd
 import streamlit as st
 
+# Set the browser title and page layout
 st.set_page_config(
     page_title="Tourism Package Prediction",
     page_icon="✈️",
@@ -18,6 +19,7 @@ APP_DIR = Path(__file__).resolve().parent
 PROJECT_DIR = APP_DIR.parent
 MODEL_PATH = PROJECT_DIR / "models" / "best_model.joblib"
 
+# Keep the inputs in the same order used during training
 FEATURE_COLUMNS = [
     "Age",
     "TypeofContact",
@@ -39,6 +41,7 @@ FEATURE_COLUMNS = [
     "MonthlyIncome",
 ]
 
+# Match the data types expected by the trained pipeline
 FEATURE_DTYPES = {
     "Age": "float64",
     "TypeofContact": "object",
@@ -71,6 +74,7 @@ def load_prediction_model():
 
     return joblib.load(MODEL_PATH)
 
+# Stop the application early if the model cannot be loaded
 try:
     model = load_prediction_model()
 except Exception as error:
@@ -79,6 +83,7 @@ except Exception as error:
     )
     st.stop()
 
+# Display the application heading and usage guidance
 st.title("Tourism Package Purchase Prediction")
 
 st.subheader("Turning Traveller Profiles into Purchase Possibilities.") # v2 - commit!
@@ -93,6 +98,7 @@ st.caption(
     "It should not be used as an automated customer eligibility decision."
 )
 
+# Collect customer and sales-pitch details in one form
 with st.form("tourism_prediction_form"):
 
     customer_column, sales_column = st.columns(2)
@@ -151,8 +157,8 @@ with st.form("tourism_prediction_form"):
         monthly_income = st.number_input(
             "Monthly income",
             min_value=1000.0,
-            max_value=38304.0,
-            value=22403.0,
+            max_value=100000.0,
+            value=22400.0,
             step=500.0,
         )
 
@@ -251,6 +257,7 @@ with st.form("tourism_prediction_form"):
         use_container_width=True,
     )
 
+# Generate a prediction only after the form is submitted
 if submitted:
 
     # Store the submitted values in the model's expected feature order
@@ -297,6 +304,7 @@ if submitted:
         FEATURE_DTYPES
     )
 
+    # Predict the class and its purchase probability
     try:
         prediction = int(
             model.predict(input_data)[0]
@@ -312,6 +320,7 @@ if submitted:
         )
         st.stop()
 
+    # Present the prediction in a simple business-friendly format
     st.subheader("Prediction result")
 
     if prediction == 1:
@@ -330,6 +339,7 @@ if submitted:
         f"{purchase_probability:.1%}",
     )
 
+    # Allow the submitted model input to be reviewed
     with st.expander("View submitted model input"):
         st.dataframe(
             input_data,
